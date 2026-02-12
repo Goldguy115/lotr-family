@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireFamilySession } from "@/lib/familyAuth";
+import { cookies } from "next/headers";
 
 export async function GET() {
-  if (!(await requireFamilySession())) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
-  return NextResponse.json({ ok: true });
+  const token = (await cookies()).get("family_session")?.value;
+  return NextResponse.json({ ok: !!token });
 }
