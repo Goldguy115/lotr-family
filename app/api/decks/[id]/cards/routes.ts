@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { requireFamilySession } from "@/lib/familyAuth";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   if (!(await requireFamilySession())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const deckId = params.id;
+  const { id: deckId } = await context.params;
+
   const body = await req.json().catch(() => ({}));
   const card_code = String(body.card_code ?? "");
   const qty = Number(body.qty ?? 0);
