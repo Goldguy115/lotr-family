@@ -24,8 +24,10 @@ const res = await fetch("/api/login", {
       return;
     }
 
-    router.push("/collection");
-    router.refresh();
+    const next = new URLSearchParams(window.location.search).get("next") || "/collection";
+window.location.href = next;
+
+
   }
 
   return (
