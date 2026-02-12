@@ -268,9 +268,8 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
                       const isHero = c.type_code === "hero";
                       const heroSelected = heroes.includes(c.code);
 
-                      const imgUrl = c.imagesrc
-                        ? `https://ringsdb.com${c.imagesrc}`
-                        : `https://ringsdb.com/bundles/cards/${c.code}.png`;
+                      const imgUrl = `https://ringsdb.com/bundles/cards/${c.code}.png`;
+
 
                       return (
                         <div key={c.code} className="row" style={{ justifyContent: "space-between", gap: 14 }}>
