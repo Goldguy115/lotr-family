@@ -38,8 +38,10 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
       const dRes = await fetch(`/api/decks/${deckId}`, { credentials: "same-origin" });
       const dj = await dRes.json().catch(() => ({}));
       if (!dRes.ok) throw new Error(dj.error ?? "Failed to load deck");
+
       setDeckName(dj.deck?.name ?? "Deck");
       setHeroes(dj.heroes ?? []);
+
       const dc: Record<string, number> = {};
       for (const r of (dj.cards ?? []) as DeckCardRow[]) dc[r.card_code] = r.qty;
       setDeckCards(dc);
@@ -71,7 +73,7 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
     })().catch(console.error);
   }, [packChoice, packs]);
 
-  // When visible cards change, load owned + usage indicators for those codes
+  // Visible cards based on filters + search
   const visible = useMemo(() => {
     const qq = q.trim().toLowerCase();
     return cards.filter(c => {
@@ -83,6 +85,7 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
     });
   }, [cards, q, typeFilter, sphereFilter]);
 
+  // When visible cards change, load owned + usage indicators for those codes
   useEffect(() => {
     (async () => {
       const codes = visible.slice(0, 200).map(c => c.code); // cap to keep requests sane
@@ -166,13 +169,21 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
         <hr className="sep" />
 
         <h3 style={{ marginTop: 0 }}>Heroes (1–3)</h3>
-        <div className="small muted" style={{ marginBottom: 8 }}>Click a Hero card in the list to add/remove here.</div>
+        <div className="small muted" style={{ marginBottom: 8 }}>
+          Click a Hero card in the list to add/remove here.
+        </div>
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           {heroes.map(h => (
             <span key={h} className="pill">
               {h}
-              <button className="btn secondary" style={{ marginLeft: 8 }} onClick={() => saveHeroes(heroes.filter(x => x !== h))}>x</button>
+              <button
+                className="btn secondary"
+                style={{ marginLeft: 8 }}
+                onClick={() => saveHeroes(heroes.filter(x => x !== h))}
+              >
+                x
+              </button>
             </span>
           ))}
         </div>
@@ -203,7 +214,9 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
         <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Card Pool</h2>
-            <div className="small muted">Enabled packs only by default • Search/Type/Sphere filters • Shows owned + “also in other decks”</div>
+            <div className="small muted">
+              Enabled packs only by default • Search/Type/Sphere filters • Shows owned + “also in other decks”
+            </div>
           </div>
 
           <div className="row" style={{ gap: 10 }}>
@@ -245,6 +258,7 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
               .map(type => (
                 <div key={type}>
                   <h3 style={{ margin: "0 0 10px 0" }}>{type}</h3>
+
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {grouped[type].slice(0, 200).map(c => {
                       const deckQty = deckCards[c.code] ?? 0;
@@ -254,36 +268,64 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
                       const isHero = c.type_code === "hero";
                       const heroSelected = heroes.includes(c.code);
 
+                      const imgUrl = c.imagesrc
+                        ? `https://ringsdb.com${c.imagesrc}`
+                        : `https://ringsdb.com/bundles/cards/${c.code}.png`;
+
                       return (
                         <div key={c.code} className="row" style={{ justifyContent: "space-between", gap: 14 }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700 }}>{c.name}</div>
-                            <div className="small muted">
-                              {(c.sphere_name ?? c.sphere_code ?? "—")} • {(c.type_name ?? c.type_code ?? "—")} • {cardStatsLine(c)}
-                            </div>
-                            {(c.traits || c.text) ? (
-                              <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
-                                {c.traits ? <div><strong>Traits:</strong> {c.traits}</div> : null}
-                                {c.text ? <div style={{ marginTop: 4 }}>{c.text}</div> : null}
-                              </div>
-                            ) : null}
+                          <div style={{ display: "flex", gap: 14, minWidth: 0 }}>
+                            {/* Card image */}
+                            <img
+                              src={imgUrl}
+                              alt={c.name}
+                              style={{
+                                width: 140,
+                                height: "auto",
+                                borderRadius: 12,
+                                boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
+                                flex: "0 0 auto",
+                              }}
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
 
-                            <div className="small muted" style={{ marginTop: 6 }}>
-                              Owned: <strong style={{ color: "var(--text)" }}>{ownedQty}</strong>
-                              {" • "}
-                              In this deck: <strong style={{ color: "var(--text)" }}>{deckQty}</strong>
-                              {others.length ? (
-                                <>
-                                  {" • "}
-                                  Also in:{" "}
-                                  {others.slice(0, 3).map((o, i) => (
-                                    <span key={o.deck_id}>
-                                      {i ? ", " : ""}
-                                      {o.deck_name} ({o.qty}x)
-                                    </span>
-                                  ))}
-                                </>
+                            {/* Text details */}
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700 }}>{c.name}</div>
+
+                              <div className="small muted">
+                                {(c.sphere_name ?? c.sphere_code ?? "—")} •{" "}
+                                {(c.type_name ?? c.type_code ?? "—")} •{" "}
+                                {cardStatsLine(c)}
+                              </div>
+
+                              {(c.traits || c.text) ? (
+                                <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
+                                  {c.traits ? <div><strong>Traits:</strong> {c.traits}</div> : null}
+                                  {c.text ? <div style={{ marginTop: 4 }}>{c.text}</div> : null}
+                                </div>
                               ) : null}
+
+                              <div className="small muted" style={{ marginTop: 6 }}>
+                                Owned: <strong style={{ color: "var(--text)" }}>{ownedQty}</strong>
+                                {" • "}
+                                In this deck: <strong style={{ color: "var(--text)" }}>{deckQty}</strong>
+                                {others.length ? (
+                                  <>
+                                    {" • "}
+                                    Also in:{" "}
+                                    {others.slice(0, 3).map((o, i) => (
+                                      <span key={o.deck_id}>
+                                        {i ? ", " : ""}
+                                        {o.deck_name} ({o.qty}x)
+                                      </span>
+                                    ))}
+                                  </>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
 
