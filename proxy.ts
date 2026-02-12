@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PROTECTED_PREFIXES = ["/collection", "/decks"];
-
-export function proxy(req: NextRequest) {
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // allow these through
+  // Always allow these
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/login") ||
@@ -18,13 +16,15 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // protect pages
-  const isProtected = PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  if (!isProtected) return NextResponse.next();
-
-  // check cookie set by /api/login
   const token = req.cookies.get("family_session")?.value;
-  if (!token) {
+
+  const isProtected =
+    pathname === "/collection" ||
+    pathname.startsWith("/collection/") ||
+    pathname === "/decks" ||
+    pathname.startsWith("/decks/");
+
+  if (isProtected && !token) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
