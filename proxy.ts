@@ -1,37 +1,39 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+const PROTECTED_PREFIXES = ["/collection", "/decks"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow login + static assets
+  // allow these through
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/login") ||
-    pathname.startsWith("/api/logout") ||
+    pathname.startsWith("/api/me") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/robots") ||
+    pathname.startsWith("/sitemap")
   ) {
     return NextResponse.next();
   }
 
-  // Protect these routes
-  if (
-    pathname.startsWith("/collection") ||
-    pathname.startsWith("/decks") ||
-    pathname.startsWith("/api")
-  ) {
-    const hasSession = req.cookies.get("lotr_family_session")?.value;
-    if (!hasSession) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/login";
-      return NextResponse.redirect(url);
-    }
+  // protect pages
+  const isProtected = PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  if (!isProtected) return NextResponse.next();
+
+  // check cookie set by /api/login
+  const token = req.cookies.get("family_session")?.value;
+  if (!token) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/collection/:path*", "/decks/:path*", "/api/:path*"],
+  matcher: ["/collection/:path*", "/decks/:path*"],
 };
