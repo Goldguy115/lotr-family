@@ -199,9 +199,8 @@ export default function CollectionPage() {
             {packCards.map(c => {
               const qty = owned[c.code] ?? 0;
 
-              const imgUrl = c.imagesrc
-                ? `https://ringsdb.com${c.imagesrc}`
-                : `https://ringsdb.com/bundles/cards/${c.code}.png`;
+              const imgUrl = `https://ringsdb.com/bundles/cards/${c.code}.png`;
+
 
               return (
                 <div key={c.code} className="row" style={{ justifyContent: "space-between", gap: 14 }}>
