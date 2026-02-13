@@ -544,17 +544,48 @@ const [importBusy, setImportBusy] = useState(false);
     });
   }
 
-  async function setDeckQty(code: string, qty: number) {
-    const q = Math.max(0, Math.trunc(qty));
-    setDeckCards(prev => ({ ...prev, [code]: q }));
-    await fetch(`/api/decks/${deckId}/cards`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ card_code: code, qty: q }),
-    });
+async function setDeckQty(code: string, qty: number) {
+  const q = Math.max(0, Math.trunc(qty));
+  setDeckCards(prev => ({ ...prev, [code]: q }));
+  await fetch(`/api/decks/${deckId}/cards`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ card_code: code, qty: q }),
+  });
+}
+
+function parseImportedText(text: string) {
+  const heroesOut: string[] = [];
+  const cardsOut: { card_code: string; qty: number }[] = [];
+
+  const lines = (text ?? "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    if (/^deck\b/i.test(line)) continue;
+    if (/^heroes?\b/i.test(line)) continue;
+
+    const m = line.match(/^(\d+)\s*x?\s*([0-9A-Za-z]{5,})\b/);
+    if (!m) continue;
+
+    const qty = Math.max(0, Math.trunc(Number(m[1] ?? "0")));
+    const code = String(m[2] ?? "").trim();
+    if (!code) continue;
+
+    if (qty === 1 && heroesOut.length < 3 && !heroesOut.includes(code)) {
+      heroesOut.push(code);
+      continue;
+    }
+
+    if (qty > 0) {
+      cardsOut.push({ card_code: code, qty });
+    }
   }
-  async function runImportReplace() { 
+
+  return { heroes: heroesOut.slice(0, 3), cards: cardsOut };
+}
+
+async function runImportReplace() {
 
   setImportErr(null); 
 
