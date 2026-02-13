@@ -16,15 +16,11 @@ type DeckSummary = {
 };
 
 const SPHERES = ["leadership", "tactics", "spirit", "lore", "neutral", "baggins", "fellowship"] as const;
-type Sphere = typeof SPHERES[number];
 
 const TYPE_LABELS: Record<string, string> = {
   ally: "Allies",
   attachment: "Attachments",
   event: "Events",
-  "player-side-quest": "Side Quests",
-  contract: "Contracts",
-  treasure: "Treasures",
 };
 
 function sphereAccent(s: string) {
@@ -83,7 +79,7 @@ export default function DecksPage() {
     })().catch(console.error);
   }, []);
 
-  // Build card index from enabled packs (once packs loaded)
+  // Build card index from enabled packs (for sphere/type counts)
   useEffect(() => {
     (async () => {
       if (!packs.length) return;
@@ -171,17 +167,10 @@ export default function DecksPage() {
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
-
-    let arr = deckSummaries.filter(d => {
-      if (!qq) return true;
-      return (d.name ?? "").toLowerCase().includes(qq);
-    });
+    let arr = deckSummaries.filter(d => !qq || (d.name ?? "").toLowerCase().includes(qq));
 
     if (sphereFilter !== "__all__") {
-      arr = arr.filter(d => {
-        const sc = deckSphereCounts(d);
-        return (sc[sphereFilter] ?? 0) > 0;
-      });
+      arr = arr.filter(d => (deckSphereCounts(d)[sphereFilter] ?? 0) > 0);
     }
 
     arr = arr.slice();
@@ -193,7 +182,6 @@ export default function DecksPage() {
     } else if (sort === "created_desc") {
       arr.sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
     } else {
-      // updated_desc
       arr.sort((a, b) => Date.parse(b.updated_at ?? "") - Date.parse(a.updated_at ?? ""));
     }
 
@@ -234,14 +222,7 @@ export default function DecksPage() {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-          gap: 12,
-          alignItems: "start",
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12, alignItems: "start" }}>
         {filtered.map((d) => {
           const size = deckMainSize(d);
           const typeCounts = deckTypeCounts(d);
@@ -249,7 +230,6 @@ export default function DecksPage() {
 
           return (
             <div key={d.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
-              {/* sphere color band */}
               <div style={{ display: "flex", height: 10 }}>
                 {(spheres.length ? spheres : ["unknown"]).map((s) => (
                   <div key={s} style={{ flex: 1, background: sphereAccent(s) }} />
@@ -290,7 +270,6 @@ export default function DecksPage() {
                   </div>
                 </div>
 
-                {/* mini stats */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                   {["ally", "attachment", "event"].map(t => (
                     <div key={t} style={{ padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.03)", fontWeight: 800 }}>
@@ -299,7 +278,6 @@ export default function DecksPage() {
                   ))}
                 </div>
 
-                {/* sphere mini chips */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                   {Object.entries(deckSphereCounts(d))
                     .filter(([s, n]) => s !== "unknown" && n > 0)
