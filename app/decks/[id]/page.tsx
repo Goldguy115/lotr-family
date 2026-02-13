@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useParams } from "next/navigation";
 import { RingsCard, cardStatsLine, fetchCardsByPack, isPlayerCard } from "@/lib/ringsdb";
 
 type PackRow = { pack_code: string; pack_name: string; enabled: boolean };
@@ -108,6 +109,7 @@ type DeckThumbProps = {
   onToggleHero?: () => void;
   topLeftBadge?: string | null;
   topLeftTitle?: string;
+  warn?: boolean; // overload indicator
 };
 
 function DeckThumb({
@@ -122,6 +124,7 @@ function DeckThumb({
   onToggleHero,
   topLeftBadge,
   topLeftTitle,
+  warn = false,
 }: DeckThumbProps) {
   const [hover, setHover] = useState(false);
   const w = size === "hero" ? 114 : size === "pool" ? 92 : 86;
@@ -129,18 +132,15 @@ function DeckThumb({
   return (
     <div
       style={{
-  position: "relative",
-  width: w,
-  borderRadius: 12,
-  overflow: "hidden",
-  cursor: "pointer",
-  boxShadow: hover
-    ? "0 10px 22px rgba(0,0,0,0.22)"
-    : "0 6px 16px rgba(0,0,0,0.18)",
-  transform: hover ? "translateY(-2px)" : "translateY(0px)",
-  transition: "transform 120ms ease, box-shadow 120ms ease",
-}}
-
+        position: "relative",
+        width: w,
+        borderRadius: 12,
+        overflow: "hidden",
+        cursor: "pointer",
+        boxShadow: hover ? "0 10px 22px rgba(0,0,0,0.22)" : "0 6px 16px rgba(0,0,0,0.18)",
+        transform: hover ? "translateY(-2px)" : "translateY(0px)",
+        transition: "transform 120ms ease, box-shadow 120ms ease",
+      }}
       onMouseEnter={(e) => {
         setHover(true);
         const el = e.currentTarget as HTMLElement;
@@ -177,7 +177,7 @@ function DeckThumb({
             height: 26,
             padding: "0 8px",
             borderRadius: 999,
-            background: "rgba(0,0,0,0.62)",
+            background: warn ? "linear-gradient(90deg,#b94a4a,#ff7a7a)" : "rgba(0,0,0,0.62)",
             border: "1px solid rgba(255,255,255,0.14)",
             display: "flex",
             alignItems: "center",
@@ -204,7 +204,7 @@ function DeckThumb({
             height: 26,
             padding: "0 8px",
             borderRadius: 999,
-            background: "rgba(0,0,0,0.78)",
+            background: warn ? "linear-gradient(90deg,#b94a4a,#ff7a7a)" : "rgba(0,0,0,0.78)",
             border: "1px solid rgba(255,255,255,0.16)",
             display: "flex",
             alignItems: "center",
@@ -220,7 +220,7 @@ function DeckThumb({
         </div>
       ) : null}
 
-      {/* hover overlay controls */}
+      {/* hover overlay controls (still clickable even without expansion) */}
       {(onInc || onDec || onRemoveHero || onToggleHero) ? (
         <div
           style={{
@@ -302,7 +302,8 @@ function DeckThumb({
   );
 }
 
-export default function DeckBuilder({ params }: { params: { id: string } }) {
+export default function DeckBuilder() {
+  const params = useParams<{ id: string }>();
   const deckId = params.id;
 
   const [deckName, setDeckName] = useState("");
@@ -327,6 +328,7 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
   const hidePreviewTimeout = useRef<number | null>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   // collapsible sections
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
@@ -336,6 +338,13 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
     other: true,
   });
 
+  // Collapsible card pool
+  const [poolHidden, setPoolHidden] = useState(false);
+const [importOpen, setImportOpen] = useState(false);
+const [importText, setImportText] = useState("");
+const [importErr, setImportErr] = useState<string | null>(null);
+const [importBusy, setImportBusy] = useState(false);
+
   // show preview immediately (cancels hide timeout)
   function showPreview(code: string, rect: DOMRect) {
     if (hidePreviewTimeout.current) {
@@ -344,14 +353,19 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
     }
     setPreviewCode(code);
     setPreviewRect(rect);
+    setPreviewVisible(true);
   }
 
   // hide preview after short delay
   function hidePreviewSoon(delay = 120) {
     if (hidePreviewTimeout.current) window.clearTimeout(hidePreviewTimeout.current);
     hidePreviewTimeout.current = window.setTimeout(() => {
-      setPreviewCode(null);
-      setPreviewRect(null);
+      setPreviewVisible(false);
+      // allow CSS transition then clear code
+      window.setTimeout(() => {
+        setPreviewCode(null);
+        setPreviewRect(null);
+      }, 160);
       hidePreviewTimeout.current = null;
     }, delay) as unknown as number;
   }
@@ -362,6 +376,7 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
       window.clearTimeout(hidePreviewTimeout.current);
       hidePreviewTimeout.current = null;
     }
+    setPreviewVisible(false);
     setPreviewCode(null);
     setPreviewRect(null);
   }
@@ -539,8 +554,200 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
       body: JSON.stringify({ card_code: code, qty: q }),
     });
   }
+  async function runImportReplace() { 
+
+  setImportErr(null); 
+
+  setImportBusy(true); 
+
+  try { 
+
+    const parsed = parseImportedText(importText); 
+
+    if (!parsed.heroes.length && !parsed.cards.length) { 
+
+      setImportErr("Could not find any lines like '2x 01016 ...'. Paste the export text format (qty + code)."); 
+
+      return; 
+
+    } 
+
+ 
+
+    const res = await fetch(`/api/decks/${deckId}/replace`, { 
+
+      method: "POST", 
+
+      headers: { "content-type": "application/json" }, 
+
+      credentials: "same-origin", 
+
+      body: JSON.stringify(parsed), 
+
+    }); 
+
+ 
+
+    const j = await res.json().catch(() => ({})); 
+
+    if (!res.ok) { 
+
+      setImportErr(j.error ?? "Import failed"); 
+
+      return; 
+
+    } 
+
+ 
+
+    // refresh deck state 
+
+    const dRes = await fetch(`/api/decks/${deckId}`, { credentials: "same-origin" }); 
+
+    const dj = await dRes.json().catch(() => ({})); 
+
+    if (dRes.ok) { 
+
+      setDeckName(dj.deck?.name ?? deckName); 
+
+      setHeroes(dj.heroes ?? []); 
+
+      const dc: Record<string, number> = {}; 
+
+      for (const r of (dj.cards ?? []) as { card_code: string; qty: number }[]) dc[r.card_code] = r.qty; 
+
+      setDeckCards(dc); 
+
+    } 
+
+ 
+
+    setImportOpen(false); 
+
+    setImportText(""); 
+
+  } finally { 
+
+    setImportBusy(false); 
+
+  } 
+
+} 
+function exportDeckAsText() {
+  const lines: string[] = [];
+  lines.push(`Deck: ${deckName}`);
+  lines.push("");
+
+  const heroCards = heroes
+    .map((code) => enabledIndex[code] ?? cards.find((x) => x.code === code))
+    .filter(Boolean) as RingsCard[];
+
+  lines.push(`Heroes (${heroCards.length}):`);
+  for (const h of heroCards) {
+    lines.push(`1x ${h.code} ${h.name}`);
+  }
+
+  lines.push("");
+
+  const main = Object.entries(deckCards)
+    .filter(([code, qty]) => qty > 0 && !heroes.includes(code))
+    .map(([code, qty]) => ({
+      code,
+      qty,
+      card: enabledIndex[code] ?? cards.find((x) => x.code === code),
+    }))
+    .filter((x) => !!x.card) as { code: string; qty: number; card: RingsCard }[];
+
+  for (const it of main.sort((a, b) => a.card.name.localeCompare(b.card.name))) {
+    lines.push(`${it.qty}x ${it.code} ${it.card.name}`);
+  }
+
+  return lines.join("\n");
+}
+
 
   function otherDecksFor(code: string) {
+    function exportDeckAsText() {
+  const lines: string[] = [];
+  lines.push(`Deck: ${deckName}`);
+  lines.push(``);
+
+  const heroCards = heroes
+    .map((code) => enabledIndex[code] ?? cards.find((x) => x.code === code))
+    .filter(Boolean) as RingsCard[];
+
+  lines.push(`Heroes (${heroCards.length}):`);
+  for (const h of heroCards) {
+    lines.push(`1x ${h.code} ${h.name}`);
+  }
+  lines.push(``);
+
+  const main = Object.entries(deckCards)
+    .filter(([code, qty]) => qty > 0 && !heroes.includes(code))
+    .map(([code, qty]) => ({
+      code,
+      qty,
+      card: enabledIndex[code] ?? cards.find((x) => x.code === code),
+    }))
+    .filter((x) => !!x.card) as { code: string; qty: number; card: RingsCard }[];
+
+  const byType: Record<string, { code: string; qty: number; card: RingsCard }[]> = {};
+  for (const it of main) {
+    const t = (it.card.type_code ?? "other").toLowerCase();
+    (byType[t] ||= []).push(it);
+  }
+
+  const typeOrder = ["ally", "attachment", "event", "player-side-quest", "contract", "treasure", "other"];
+  for (const t of typeOrder) {
+    const arr = (byType[t] ?? []).slice().sort((a, b) => a.card.name.localeCompare(b.card.name));
+    if (!arr.length) continue;
+    const count = arr.reduce((s, x) => s + x.qty, 0);
+    lines.push(`${t.toUpperCase()} (${count}):`);
+    for (const it of arr) lines.push(`${it.qty}x ${it.code} ${it.card.name}`);
+    lines.push(``);
+  }
+
+  return lines.join("\n");
+}
+
+function parseImportedText(text: string): { heroes: string[]; cards: { card_code: string; qty: number }[] } {
+  const heroesOut: string[] = [];
+  const cardsOut: { card_code: string; qty: number }[] = [];
+
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  let inHeroes = false;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+
+    if (lower.startsWith("heroes")) {
+      inHeroes = true;
+      continue;
+    }
+    if (/\)\s*:$/i.test(line) && !lower.startsWith("heroes")) {
+      inHeroes = false;
+      continue;
+    }
+
+    const m = line.match(/^(\d+)\s*x\s*([0-9a-zA-Z]+)\b/);
+    if (!m) continue;
+
+    const qty = Math.max(0, Math.trunc(Number(m[1])));
+    const code = String(m[2]);
+    if (!qty || !code) continue;
+
+    if (inHeroes) {
+      if (!heroesOut.includes(code)) heroesOut.push(code);
+    } else {
+      cardsOut.push({ card_code: code, qty });
+    }
+  }
+
+  return { heroes: heroesOut.slice(0, 3), cards: cardsOut };
+}
+
+
     return (usage[code] ?? []).filter(u => u.deck_id !== deckId);
   }
 
@@ -622,7 +829,68 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
   const eventsCount = useMemo(() => sumSection(deckSections.event), [deckSections]);
   const otherCount = useMemo(() => sumSection(deckSections.other), [deckSections]);
 
-  // initialize nothing else for preview; it's controlled by thumb hover handlers
+  // --- Phase A: Stats / buckets / avg cost
+  const sphereCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [code, qty] of Object.entries(deckCards)) {
+      if (!qty || qty <= 0) continue;
+      if (heroes.includes(code)) continue;
+      const c = enabledIndex[code] ?? cards.find(x => x.code === code);
+      if (!c) continue;
+      const s = (c.sphere_code ?? "neutral").toLowerCase();
+      out[s] = (out[s] || 0) + qty;
+    }
+    return out;
+  }, [deckCards, heroes, enabledIndex, cards]);
+
+  const typeCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [code, qty] of Object.entries(deckCards)) {
+      if (!qty || qty <= 0) continue;
+      if (heroes.includes(code)) continue;
+      const c = enabledIndex[code] ?? cards.find(x => x.code === code);
+      if (!c) continue;
+      const t = (c.type_code ?? "other").toLowerCase();
+      out[t] = (out[t] || 0) + qty;
+    }
+    return out;
+  }, [deckCards, heroes, enabledIndex, cards]);
+
+  const avgCost = useMemo(() => {
+    let totalCost = 0;
+    let totalQty = 0;
+    for (const [code, qty] of Object.entries(deckCards)) {
+      if (!qty || qty <= 0) continue;
+      if (heroes.includes(code)) continue;
+      const c = enabledIndex[code] ?? cards.find(x => x.code === code);
+      const cost = c && typeof (c as any).cost === "number" ? (c as any).cost : null;
+      if (cost === null || cost === undefined) continue;
+      totalCost += cost * qty;
+      totalQty += qty;
+    }
+    return totalQty ? totalCost / totalQty : null;
+  }, [deckCards, heroes, enabledIndex, cards]);
+
+  const costBuckets = useMemo(() => {
+    const buckets: Record<string, number> = { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5+": 0 };
+    for (const [code, qty] of Object.entries(deckCards)) {
+      if (!qty || qty <= 0) continue;
+      if (heroes.includes(code)) continue;
+      const c = enabledIndex[code] ?? cards.find(x => x.code === code);
+      const cost = c && typeof (c as any).cost === "number" ? (c as any).cost : null;
+      if (cost === null || cost === undefined) continue;
+      if (cost >= 5) buckets["5+"] += qty;
+      else buckets[String(Math.max(0, Math.trunc(cost)))] += qty;
+    }
+    return buckets;
+  }, [deckCards, heroes, enabledIndex, cards]);
+
+  // small helper to determine overload for a code
+  function isOverloaded(code: string) {
+    const ownedQty = owned[code] ?? 0;
+    const deckQty = deckCards[code] ?? 0;
+    return deckQty > ownedQty;
+  }
 
   return (
     <div style={{ display: "block" }}>
@@ -643,12 +911,58 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
                   Main deck size: <strong style={{ color: "var(--text)" }}>{mainDeckSize}</strong> (heroes excluded)
                   {loadingEnabledIndex ? " • Loading enabled packs…" : ""}
                 </div>
+
+                {/* --- STATS PANEL --- */}
+                <div style={{ marginTop: 10, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.02)", fontWeight: 800 }}>
+                    Cards: <strong>{mainDeckSize}</strong>
+                  </div>
+
+                  <div style={{ padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.02)", fontWeight: 800 }}>
+                    Avg cost: <strong>{avgCost === null ? "—" : avgCost.toFixed(2)}</strong>
+                  </div>
+
+                  {/* sphere chips */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {Object.entries(sphereCounts).map(([sphere, count]) => (
+                      <div key={sphere} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: 3, background: sphereAccent(sphere) }} />
+                        <div className="small muted" style={{ fontWeight: 700 }}>{sphereLabel(sphere)} {count}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* resource curve */}
+                <div style={{ marginTop: 10, display: "flex", gap: 6, alignItems: "center" }}>
+                  {["0","1","2","3","4","5+"].map(k => (
+                    <div key={k} style={{ textAlign: "center", width: 40 }}>
+                      <div style={{ fontWeight: 900 }}>{costBuckets[k]}</div>
+                      <div className="small muted">{k}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* --- end stats --- */}
               </div>
 
-              <div className="row" style={{ gap: 10, alignItems: "center" }}>
-                <input value={deckName} onChange={e => setDeckName(e.target.value)} />
-                <button className="btn secondary" onClick={saveName}>Save</button>
-              </div>
+              <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+  <input value={deckName} onChange={e => setDeckName(e.target.value)} />
+  <button className="btn secondary" onClick={saveName}>Save</button>
+
+  <button
+    className="btn secondary"
+    onClick={async () => {
+      const text = exportDeckAsText();
+      await navigator.clipboard.writeText(text);
+    }}
+  >
+    Copy as text
+  </button>
+
+  <button className="btn secondary" onClick={() => setImportOpen(true)}>
+    Import
+  </button>
+</div>
             </div>
 
             <hr className="sep" />
@@ -673,6 +987,9 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
                         onHoverStart={(code, rect) => showPreview(code, rect)}
                         onHoverEnd={() => hidePreviewSoon()}
                         onRemoveHero={() => saveHeroes(heroes.filter(x => x !== hc.code))}
+                        topLeftBadge={String(owned[hc.code] ?? 0)}
+                        topLeftTitle={`Owned: ${owned[hc.code] ?? 0}`}
+                        warn={isOverloaded(hc.code)}
                       />
                       <div
                         className="small"
@@ -775,169 +1092,258 @@ export default function DeckBuilder({ params }: { params: { id: string } }) {
           </div>
 
           {/* Card Pool - thumbnail grid */}
-          <div className="card" style={{ flex: "1 1 auto" }}>
-            <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>Card Pool</h2>
-                <div className="small muted">
-                  Thumbnail grid • Hover for preview • +/− to add/remove • Heroes: toggle hero selection
+          {!poolHidden ? (
+            <div className="card" style={{ flex: "1 1 auto" }}>
+              <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <h2 style={{ marginTop: 0, marginBottom: 6 }}>Card Pool</h2>
+                  <div className="small muted">
+                    Thumbnail grid • Hover for preview • +/− to add/remove • Heroes: toggle hero selection
+                  </div>
+                </div>
+
+                <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="btn secondary" onClick={() => setPoolHidden(true)}>
+                    Hide Card Pool
+                  </button>
+
+                  <select value={packChoice} onChange={e => setPackChoice(e.target.value)}>
+                    <option value="__enabled__">All enabled packs</option>
+                    {packs.map(p => (
+                      <option key={p.pack_code} value={p.pack_code}>
+                        {p.pack_name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                    <option value="__all__">All types</option>
+                    {TYPE_ORDER.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+
+                  <select value={sphereFilter} onChange={e => setSphereFilter(e.target.value)}>
+                    <option value="__all__">All spheres</option>
+                    {SPHERE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+
+                  <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" />
                 </div>
               </div>
 
-              <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <select value={packChoice} onChange={e => setPackChoice(e.target.value)}>
-                  <option value="__enabled__">All enabled packs</option>
-                  {packs.map(p => (
-                    <option key={p.pack_code} value={p.pack_code}>
-                      {p.pack_name}
-                    </option>
-                  ))}
-                </select>
+              <hr className="sep" />
 
-                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-                  <option value="__all__">All types</option>
-                  {TYPE_ORDER.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-
-                <select value={sphereFilter} onChange={e => setSphereFilter(e.target.value)}>
-                  <option value="__all__">All spheres</option>
-                  {SPHERE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" />
-              </div>
+              {loadingCards ? (
+                <div className="muted">Loading cards…</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {Object.keys(poolByTypeSphere)
+                    .sort((a, b) => {
+                      const ia = TYPE_ORDER.indexOf(a);
+                      const ib = TYPE_ORDER.indexOf(b);
+                      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+                    })
+                    .map(type => (
+                      <PoolTypeSection
+                        key={type}
+                        type={type}
+                        itemsBySphere={poolByTypeSphere[type]}
+                        onHover={(code, rect) => showPreview(code, rect)}
+                        onHoverEnd={() => hidePreviewSoon()}
+                        deckQtyFor={(code) => deckCards[code] ?? 0}
+                        ownedFor={(code) => owned[code] ?? 0}
+                        isHeroSelected={(code) => heroes.includes(code)}
+                        onToggleHero={(code) => {
+                          if (heroes.includes(code)) {
+                            saveHeroes(heroes.filter(h => h !== code));
+                          } else {
+                            if (heroes.length >= 3) return;
+                            saveHeroes([...heroes, code]);
+                          }
+                        }}
+                        onInc={(code) => setDeckQty(code, (deckCards[code] ?? 0) + 1)}
+                        onDec={(code) => setDeckQty(code, (deckCards[code] ?? 0) - 1)}
+                      />
+                    ))}
+                </div>
+              )}
             </div>
-
-            <hr className="sep" />
-
-            {loadingCards ? (
-              <div className="muted">Loading cards…</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {Object.keys(poolByTypeSphere)
-                  .sort((a, b) => {
-                    const ia = TYPE_ORDER.indexOf(a);
-                    const ib = TYPE_ORDER.indexOf(b);
-                    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-                  })
-                  .map(type => (
-                    <PoolTypeSection
-                      key={type}
-                      type={type}
-                      itemsBySphere={poolByTypeSphere[type]}
-                      onHover={(code, rect) => showPreview(code, rect)}
-                      onHoverEnd={() => hidePreviewSoon()}
-                      deckQtyFor={(code) => deckCards[code] ?? 0}
-                      ownedFor={(code) => owned[code] ?? 0}
-                      isHeroSelected={(code) => heroes.includes(code)}
-                      onToggleHero={(code) => {
-                        if (heroes.includes(code)) {
-                          saveHeroes(heroes.filter(h => h !== code));
-                        } else {
-                          if (heroes.length >= 3) return;
-                          saveHeroes([...heroes, code]);
-                        }
-                      }}
-                      onInc={(code) => setDeckQty(code, (deckCards[code] ?? 0) + 1)}
-                      onDec={(code) => setDeckQty(code, (deckCards[code] ?? 0) - 1)}
-                    />
-                  ))}
-              </div>
-            )}
-          </div>
+          ) : (
+            <div style={{ padding: 8 }}>
+              <button className="btn" onClick={() => setPoolHidden(false)}>Show Card Pool</button>
+            </div>
+          )}
         </div>
 
-        {/* small spacer to keep preview area free for floating panel */}
+        {/* small spacer (keeps area free for floating preview) */}
         <div style={{ width: 12 }} />
       </div>
 
-      {/* Floating hover preview (appears while hovering a thumb or while pointer is over the preview) */}
+      {/* Floating hover preview + backdrop (fade & scale) */}
       {previewCode && previewRect ? (
-        (() => {
-          const padding = 12;
-          const panelW = Math.min(420, window.innerWidth * 0.44);
-          const panelH = Math.min(window.innerHeight * 0.72, 680);
-          const gap = 12;
+        <>
+          {/* backdrop that blurs a little; keep it low z so panel sits above */}
+          <div
+            onMouseEnter={() => {
+              if (hidePreviewTimeout.current) {
+                window.clearTimeout(hidePreviewTimeout.current);
+                hidePreviewTimeout.current = null;
+              }
+            }}
+            onMouseLeave={() => {
+              hidePreviewSoon();
+            }}
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              zIndex: 2100,
+              pointerEvents: "none",
+              backdropFilter: "none",
+              transition: "backdrop-filter 160ms ease, opacity 160ms ease",
+              opacity: previewVisible ? 1 : 0,
+            }}
+          />
 
-          let left = previewRect.right + gap;
-          let top = previewRect.top - 40;
-          if (left + panelW + padding > window.innerWidth) {
-            left = previewRect.left - panelW - gap;
-          }
-          if (top + panelH + padding > window.innerHeight) top = window.innerHeight - panelH - padding;
-          if (top < padding) top = padding;
+          {(() => {
+            const padding = 12;
+            const panelW = Math.min(420, window.innerWidth * 0.44);
+            const panelH = Math.min(window.innerHeight * 0.72, 680);
+            const gap = 12;
 
-          const pCard = (enabledIndex[previewCode] ?? cards.find(x => x.code === previewCode)) ?? null;
-          if (!pCard) return null;
+            let left = previewRect.right + gap;
+            let top = previewRect.top - 40;
+            if (left + panelW + padding > window.innerWidth) {
+              left = previewRect.left - panelW - gap;
+            }
+            if (top + panelH + padding > window.innerHeight) top = window.innerHeight - panelH - padding;
+            if (top < padding) top = padding;
 
-          return (
-            <div
-              onMouseEnter={() => {
-                // keep preview visible while pointer is over it
-                if (hidePreviewTimeout.current) {
-                  window.clearTimeout(hidePreviewTimeout.current);
-                  hidePreviewTimeout.current = null;
-                }
-              }}
-              onMouseLeave={() => {
-                hidePreviewSoon();
-              }}
-              style={{
-                position: "fixed",
-                left,
-                top,
-                width: panelW,
-                maxHeight: panelH,
-                borderRadius: 12,
-                padding: 10,
-                background: "rgba(20,20,20,0.96)",
-                boxShadow: "0 20px 50px rgba(0,0,0,0.6)",
-                zIndex: 2200,
-                overflow: "auto",
-                color: "white",
-              }}
-            >
-              <img
-                src={cardImgUrl(pCard.code)}
-                alt={pCard.name}
-                style={{
-                  width: "100%",
-                  height: "auto",
-                  maxHeight: panelH * 0.62,
-                  objectFit: "contain",
-                  borderRadius: 8,
-                  display: "block",
+            const pCard = (enabledIndex[previewCode] ?? cards.find(x => x.code === previewCode)) ?? null;
+            if (!pCard) return null;
+
+            return (
+              <div
+                onMouseEnter={() => {
+                  if (hidePreviewTimeout.current) {
+                    window.clearTimeout(hidePreviewTimeout.current);
+                    hidePreviewTimeout.current = null;
+                  }
                 }}
-                loading="lazy"
-              />
+                onMouseLeave={() => {
+                  hidePreviewSoon();
+                }}
+                style={{
+                  position: "fixed",
+                  left,
+                  top,
+                  width: panelW,
+                  maxHeight: panelH,
+                  borderRadius: 12,
+                  padding: 10,
+                  background: "rgba(18,18,18,0.98)",
+                  boxShadow: "0 30px 70px rgba(0,0,0,0.6)",
+                  zIndex: 2200,
+                  overflow: "auto",
+                  color: "white",
+                  transition: "opacity 160ms ease, transform 160ms ease",
+                  opacity: previewVisible ? 1 : 0,
+                  transform: previewVisible ? "translateY(0) scale(1)" : "translateY(6px) scale(0.98)",
+                }}
+              >
+                <img
+                  src={cardImgUrl(pCard.code)}
+                  alt={pCard.name}
+                  style={{
+                    width: "100%",
+                    height: "auto",
+                    maxHeight: panelH * 0.62,
+                    objectFit: "contain",
+                    borderRadius: 8,
+                    display: "block",
+                  }}
+                  loading="lazy"
+                />
 
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontWeight: 900, fontSize: 16 }}>{pCard.name}</div>
-                <div className="small muted" style={{ marginTop: 6, opacity: 0.95 }}>
-                  {(pCard.sphere_name ?? pCard.sphere_code ?? "—")} • {(pCard.type_name ?? pCard.type_code ?? "—")} • {cardStatsLine(pCard)}
-                </div>
-
-                <div className="small muted" style={{ marginTop: 8 }}>
-                  Owned: <strong style={{ color: "var(--text)" }}>{owned[pCard.code] ?? 0}</strong>
-                  {" • "}
-                  In this deck: <strong style={{ color: "var(--text)" }}>{deckCards[pCard.code] ?? (heroes.includes(pCard.code) ? 1 : 0)}</strong>
-                </div>
-
-                {otherDecksFor(pCard.code).length ? (
-                  <div className="small muted" style={{ marginTop: 8 }}>
-                    Also in:{" "}
-                    {otherDecksFor(pCard.code).slice(0, 6).map((o, i) => (
-                      <span key={o.deck_id}>
-                        {i ? ", " : ""}
-                        {o.deck_name} ({o.qty}x)
-                      </span>
-                    ))}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontWeight: 900, fontSize: 16 }}>{pCard.name}</div>
+                  <div className="small muted" style={{ marginTop: 6, opacity: 0.95 }}>
+                    {(pCard.sphere_name ?? pCard.sphere_code ?? "—")} • {(pCard.type_name ?? pCard.type_code ?? "—")} • {cardStatsLine(pCard)}
                   </div>
-                ) : null}
+
+                  <div className="small muted" style={{ marginTop: 8 }}>
+                    Owned: <strong style={{ color: "var(--text)" }}>{owned[pCard.code] ?? 0}</strong>
+                    {" • "}
+                    In this deck: <strong style={{ color: "var(--text)" }}>{deckCards[pCard.code] ?? (heroes.includes(pCard.code) ? 1 : 0)}</strong>
+                  </div>
+
+                  {otherDecksFor(pCard.code).length ? (
+                    <div className="small muted" style={{ marginTop: 8 }}>
+                      Also in:{" "}
+                      {otherDecksFor(pCard.code).slice(0, 6).map((o, i) => (
+                        <span key={o.deck_id}>
+                          {i ? ", " : ""}
+                          {o.deck_name} ({o.qty}x)
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
+            );
+          })()}
+        </>
+      ) : null}
+       {importOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 5000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => { if (!importBusy) setImportOpen(false); }}
+        >
+          <div
+            className="card"
+            style={{ width: "min(860px, 96vw)", maxHeight: "88vh", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0 }}>Import deck (Replace)</h2>
+
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              style={{ width: "100%", minHeight: 280 }}
+            />
+
+            {importErr ? (
+              <div style={{ color: "salmon", marginTop: 10 }}>{importErr}</div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
+              <button
+                className="btn secondary"
+                onClick={() => setImportOpen(false)}
+                disabled={importBusy}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={runImportReplace}
+                disabled={importBusy}
+              >
+                {importBusy ? "Importing…" : "Import (Replace)"}
+              </button>
             </div>
-          );
-        })()
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -1006,6 +1412,9 @@ function DeckTypeSection(props: {
                     onHoverEnd={() => onHoverEnd?.()}
                     onInc={() => onInc(card.code)}
                     onDec={() => onDec(card.code)}
+                    topLeftBadge={String((window && (window as any).__ownedCache?.[card.code]) ?? "")}
+                    topLeftTitle={`Owned: ${String((window && (window as any).__ownedCache?.[card.code]) ?? "")}`}
+                    warn={false}
                   />
                 ))}
               </div>
@@ -1081,6 +1490,7 @@ function PoolTypeSection(props: {
                     const owned = ownedFor(c.code);
                     const isHero = (c.type_code ?? "").toLowerCase() === "hero";
                     const heroSel = isHeroSelected(c.code);
+                    const overload = inDeck > (owned || 0);
 
                     return (
                       <DeckThumb
@@ -1092,6 +1502,7 @@ function PoolTypeSection(props: {
                         onHoverEnd={() => onHoverEnd?.()}
                         topLeftBadge={owned ? String(owned) : null}
                         topLeftTitle={`Owned: ${owned}`}
+                        warn={!!overload}
                         onInc={!isHero ? () => onInc(c.code) : undefined}
                         onDec={!isHero ? () => onDec(c.code) : undefined}
                         onToggleHero={isHero ? () => onToggleHero(c.code) : undefined}
