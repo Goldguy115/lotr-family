@@ -19,7 +19,8 @@ export type RingsCard = {
   defense?: number | null;
   health?: number | null;
   traits?: string | null;
-  text?: string | null;
+  imagesrc?: string | null;
+  text?: string;
 };
 
 export async function fetchAllPacks(): Promise<RingsPack[]> {

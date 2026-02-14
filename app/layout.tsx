@@ -13,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="nav">
               <Link href="/collection">Collection</Link>
               <Link href="/decks">Decks</Link>
+               <Link href="/campaigns" className="hover:underline">Campaigns</Link>
             </nav>
           </div>
         </header>
